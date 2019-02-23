@@ -1,0 +1,366 @@
+---
+title: "Diamond Price Estimation"
+author: "Sahba Salarian (Student ID:251001238)"
+date: "December 2018"
+output:
+  pdf_document: default
+  word_document: default
+header-includes:
+- \usepackage{color}
+- \usepackage{titling}
+- \usepackage{caption}
+graphics: yes
+fig_caption: yes
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(bestglm) 
+library(stargazer)
+library(xtable)
+library(corrplot)
+library (car)
+library (repr)
+library (MASS)
+library (leaps)
+options(xtable.comment = FALSE)
+```
+
+## Introduction
+
+Diamond is a solid form of the element carbon which is atomically arranged in a crystal structure and is considered among the most valuable materials on the earth. This is due to the fact that the most natural diamonds have ages between 1 billion and 3.5 billion years and most are formed at depths of 150-250 or even 800 kilometers in the Earth. The process of formation of diamonds has created special features in these materials, including their extreme hardness in certain orientations, their toughness and high yield opposing breakage or deformation, their high electrical conductivity and their chemical stability. Besides the unique chemical and electro-mechanical characteristics of diamonds, their high value and dazzling appearance have classified them as gems. 
+
+
+The dispersion of white light into spectral colors is the primary gemological characteristic of gem diamonds. Experts in gemology developed methods of grading diamonds based on four characteristics which are now commonly used as the basic descriptors of diamonds. These characteristics include, diamonds mass in carats, diamond's cut considering the proportions, symmetry and polish, diamonds color and how close to white or colorless they are, and the diamond's clarity. 
+
+Due to the high value of diamonds as gems and the high price paid to own them, I believe it will be an interesting analysis to be capable of estimating their monetory value. In this report, firstly, I develop a model for diamond prices based on the available gemological characteristics and the diamond dimensions to understand and describe the relationship between the diamond price and the mentioned characteristics. Then, I examine the accuracy of the model to predict the price for other diamonds. 
+
+\newpage
+## Data Exploration
+
+In this study, I used a dataset which consists the diamond prices and their characteristics. The description of diamond dataset is presented as follow by using str() command in R software. It illustrates that the data frame contains 1000 observations with 10 variables.The diamond price in USD, is selected as the dependent variable and carat, cut, color, clarity, depth (%) and table (%), and x, y and z dimensions in mm, are considered as explanatory variables.
+
+```{r DATA, echo= FALSE}
+Diamonds <- read.csv("/Users/sahbasalarian/Finance/Finance 2018/Regression/Project/my diamond/Sahba Salarian-Diamonds.csv", header=TRUE, sep=",")
+str(Diamonds)
+```
+
+Color, cut and clarity are qualitatively classified values which have been quantified for this study. The reference to quantify these explanatory variables are respectively showed in the following tables.  
+
+```{r COLOR, echo=FALSE, results="asis"}
+co <- data.frame(Color = c("D", " E", "F", "G", "H", "I", "J") , Value = c( 7, 6, 5, 4, 3, 2, 1))
+stargazer(t(co), type="latex" , header= FALSE, title= "Color Grading")
+```
+
+```{r CUT, echo=FALSE, results="asis"}
+cu <- data.frame( Cut= c("Ideal", "Premium", "Very Good", "Good", "Fair") , Value= c( 5, 4, 3, 2, 1))
+stargazer (t(cu), type= "latex", header= FALSE, title= "Cut grading")
+```
+
+```{r Clarity, echo=FALSE, results="asis"}
+clar <- data.frame( Clarity = c("IF", " VVS1", "VVS2", "VS1", "VS2", "SI1", "SI2", "I1", "I2", "I3") , Value = c(10, 9, 8, 7, 6, 5, 4, 3, 2, 1))
+stargazer (t(clar), type= "latex", header= FALSE, title= "Clarity Grading")
+```
+## Data Visualization
+The relation between the diamond price and explanatory variables is investigated by pairs scatter plot matrix. The results are illustrated in Figure 1. This figure indicates that there is a strong relationship between the price and some variables such as the carat, dimensions, clarity and color. However, all these variables have to be checked for statistical significance. In addition, as illustrated, some explanatory variables are strongly correlated (the dimensions and the carat are highly correlated) which is the sign for probable multicollinearity. So, the Variance Inflation factor of the models should be checked to ensure that there are not any multicollinearity effects in the final fitted model. 
+
+```{r GGPAIRS, echo=FALSE, results= "asis", fig.pos="h", fig.width=7, fig.height=6 , fig.cap="Pairs Scatterplot", cache=TRUE}
+#Figure 1      
+library(GGally)
+ggpairs (Diamonds, axisLabels="none")
+```
+
+## Correlation Plot
+
+Figure 2 is another representation of the correlation between the variables via the correlation matrix. It can be seen that the positive correlations are displayed in blue and negative correlations in red. The intensity of the color and the size of the inner square are proportional to the correlation coefficients. The figure shows that the diamond price has a strong positive correlation with the diamond's carat and diamond's dimensions. It shows milder positive correlation with table and negative correlations with color and clarity. It is illustrated that depth and cut have the minimum corellation with the diamond price based on the provided data. All the explanatory variables shall be analized regarding the statistical significance. In this report p-value of 0.05 is considered as the acceptable significance level. It is worth mentioning that the considerable correlation between x, y, z dimensions should not be neglected. As mentioned before the issue of multicolliniarity and how to remove them is an important topic which will be discussed later in this report.   
+
+```{r CORRELATIONMATRIX, echo=FALSE, results = "asis", fig.pos="h", fig.width=7, fig.height=6, fig.cap = "The correlation between the diamond price and other explanatory variables."}
+# Figure 2
+corrplot(cor(Diamonds,method='pearson'), method='square', order="AOE",tl.cex=1, sig.level = 0.050, addCoef.col = "black", cex.sub=0.5, number.font =0.05)
+```
+
+## Split Data into Train/Test Samples
+
+In order to develop a model and check the reliability of the fitted regression, the available data frame is divided into two categories of Train and Test sets. The selection of data from the main data base for these two groups is done via a random procedure. The Train sample is the data set used for generating the linear model while the predictability of the finalized model will be investigated via the Test sample. From the available 1000 observations, the Train sample contains 70% of the total observations, and the remainig 300 observations are classified in the Test sample for validation analysis.
+
+```{r Test&train, echo = FALSE}
+set.seed(798105) 
+split <- sample (2, nrow (Diamonds), replace= TRUE, prob = c (0.7, 0.3))
+Train <- Diamonds [split==1,]
+Test <- Diamonds [split==2,]
+```
+
+##Full Multiple Linear Regression Model
+
+At this stage a full linear regression model is built over the Train sample, based on all the 9 explanatory variables of carat, color, cut, clarity, depth, table and x, y, z dimensions. The ANOVA test of the full linear regression model is showed in Table 4. The results show that the P-values of the intercept, along with,carat, cut, color, clarity, depth percentage and y, z dimensions are less than 0.01 demonstrating their high statistictal significane in diamond pricing. However, the results shows less significanse for other parameters (table percentage and x diemension). The R^2 and adjusted R^2 of the full-model regression are 0.926 and 0.925, respectively. Meaning that 92.6 percent of the variability has been captured and explained by the full model regression. 
+
+```{r FULLMODEL, echo=FALSE, results="asis"}
+#Table 4
+Fullmodel <- lm(price~., data = Train)
+stargazer (Fullmodel, type="latex", title="ANOVA test of the Fullmodel.", header = FALSE)
+#summary  (Fullmodel)
+```
+
+\newpage
+
+##Variable Selection
+The ANOVA test of the full model and the resulted P-values showed that some variables are more significant in predicting the diamond price. In order to check the redundancy of the explanatory variables and find a balanced set of variables, two distinct methods of backward stagewise regression and best subset regression is used in this report by AIC/BIC approach. The lowest AIC and BIC, obtained from each method are presented in Table 5. 
+
+AIC picked 8 variables while BIC picked 7 variables as more effectives. Table 6 shows the parameters chosen for each method. In this report, the best variables chosen via the BIC method is used since the BIC method is more parsimonious than AIC.
+
+
+```{r BACkWARD-AIC, echo=FALSE, results = "hide"}
+backwardAIC <- step(Fullmodel, direction = "backward")
+print(AIC(backwardAIC))
+```
+
+
+```{r BACKWARDBIC, echo=FALSE, results = "hide" }
+backwardBIC <- step (Fullmodel, k=log(nrow(Train)), direction = "backward")
+print(BIC(backwardBIC))
+```
+
+
+```{r BESTSUBSET, echo=FALSE, results= "hide"}
+(BestAIC <- bestglm(Train, IC="AIC")$BestModel)
+(BestBIC <- bestglm (Train, IC="BIC")$BestModel)
+AIC(BestAIC)
+BIC (BestBIC)
+```
+
+
+```{r COMPARINGICs, echo=FALSE, results="asis"}
+#Table 5
+outIC <- data.frame("AIC" = c (AIC(backwardAIC),AIC(BestAIC)),"BIC"=c(BIC(backwardBIC),BIC(BestBIC)), row.names=c("Backward-stagewise", "Best subset"))
+out <- xtable(outIC, caption="AIC/BIC Comparisons")
+print(out)
+```
+
+
+
+
+```{r VARIABLESELECTION, echo=FALSE, results="asis"}
+#Table 6 
+outIC1 <- data.frame("The selected variables" =c("carat+ cut + color + clarity + depth+ x + y + z", "carat+ cut + color + clarity + depth + y + z ","carat+ cut + color + clarity + depth + x + y + z","carat+ cut + color + clarity + depth + y + z"), row.names=c("Backward-stagewise AIC", "Backward-stagewise BIC", "Best subset AIC", "Best subset BIC"))
+out1 <- xtable(outIC1, caption="The list of the selected variables by using backward-stagewise and best subset methods.")
+print(out1)
+```
+\newpage
+
+## Best Model Based on BIC Variable Selection 
+
+Based on the variable selection section and the BIC method, a new model is generated using linear regression with explanatory variables of carat, cut, color, clarity, depth, y and z. Table 7 summarizes the results of ANOVA test for this model. The results show that the diamond price is significantly affected by all the seven explanatory variables and the intercept and all have P-values less than 0.01. Also, the R^2 and adjusted R^2 of the model are 92.5%. meaning that 92.5 percent of the variability is explained by this model. Interestingly the value of R^2 is similar to previous analysis with all the 9 explanatory variables being considered, meaning that the model is not missing the explanation of any variabilities although the number of explanatory variables are reduced. This also confirms the redundancy of the omitted explanatory variables.
+
+
+```{r BESTMODEL, echo=FALSE, results="asis"}
+#Table 7
+Bestmodel <- lm(price ~  carat + cut+ color + clarity + depth + z + y, data=Train)
+stargazer (Bestmodel, type="latex", title="ANOVA test of the Bestmodel based on backward stepwise (BIC).", header = FALSE)
+#summary (Bestmodel)
+```
+\newpage
+
+## Diagnostics Plot of the Best Model
+
+The basic tool for examining the fitted model is checking the residuals. To check the heteroscedasticity, normality, and influential observations for this model, residual diagnostic plots are presented in Figure 3. The first two plots, residual vs. fitted model and scale location plot, check the assumption of linearity and homoscedasticity.Some heteroscedastic behaviour can be observered in residuals due to the existence of very small and large values at the same time in our data set. The scale location diagram which shall have the average of 1, a range between 0.5 to 1.75, which is not exactly what we expect from an  ideal standaradized residual behaviour. The presence of influential outliers is checked by the residual vs. Leverage plot. The normality assumption for the residuals is also examined via the Q-Q plot, comparing the residuals to "ideal" normal observations. The Q-Q plot reveals that the observations are not well alligned with the 45-degree line, meaning that the behaviour of the original population is not completely close to the normal distribution. The Box-cox transformation of the response variable is built to check if there is a room to improve the normality.
+
+ 
+```{r DIAGNOSTICS, echo=FALSE, fig.pos="H", fig.width=6, fig.height=6, fig.cap="Diagnostic checks for Full Model", warning=FALSE}
+layout(matrix (1:4, ncol=2))
+plot(Bestmodel, span=1)
+layout (1)
+```
+
+\newpage
+
+## Histogram of the data
+
+Investigating the histogram of the data set gives us a clue about the range of diamond prices in our data frame. As illustrated in Figure 4., the range of diamond prices provided in data set is very wide from small values, under 2000 to high values of over 15000. Due to this variety the heteroscedastic resuals are more likely to happen.   
+
+```{r DOTPLOT, echo=FALSE, results= "asis" , fig.width=6, fig.height= 5, fig.cap= "Dotplot of diamond prices"}
+#Figure4
+library(ggplot2)
+ggplot(Diamonds, aes(x=price , y=..count..)) +
+  geom_dotplot(method="histodot", binwidth=135) +
+ scale_y_continuous(NULL, breaks = NULL)
+```
+
+\newpage
+
+##Box-Cox Transforming
+
+Considering the fact that real data sets are not always following the normal distribution behaviour, as also shown in Figure 4, an appropriate transformation may improve the statistical model. In this study, BoxCox command is used to check if there is a room for a power transformation to better explain the variabilities and improve the normality. Figure 5 displays the Box-Cox transformation coefficient (lambda) value for the model with explantory variables of carat, cut, color, clarity, depth, y and z. As shown, the optimal value of lambda is close to zero. The lambda= 0 corresponds to a logarithmic transformation of response (diamond price). So a new model based on the logarithmic value of the price of the diamond is developed and the regarding diagnostic plots are checked again. 
+
+
+```{r BOXCOXTRANSFORMATION, echo=FALSE, results = "asis", fig.pos="h", fig.cap="The Box-Cox Transformation Coefficient Value."}
+#Figure 4
+bc <- boxcox (lm(price ~ carat+ cut+ color+ clarity + depth + y +z , data=Train), lambda=seq(-2,2,by=0.4))
+lambda<-bc$x[which.max(bc$y)]
+```
+
+\newpage
+
+## Model after Log Transformation
+
+Since the optimum lambda is 0, a logarithmic transformation of the diamond price has been developed. Table 8 presents the ANOVA results for this logarithmic model with explanatory variables of carat, cut, color, clarity, depth, y and z. In the new logarithmic model where R^2 is 0.978, the explanatory variable of depth and the intercept are statistically less significant in this model.
+
+
+```{r TRANSFEREDBESTMODEL, echo=FALSE, results="asis"}
+#Table 8
+Model1 <- lm(log(price) ~  carat + cut+ color + clarity + depth + y + z, data=Train)
+stargazer (Model1, type="latex", title="ANOVA test of the Model after log transformation.", header = FALSE)
+#summary (Model1)
+```
+\newpage
+
+## Modified Model after Log Transformation
+As mentioned before, ANOVA calculations of the logartithmic model showed inadequate significance level with higher P-values than the 0.05 for depth. A new model after removal of this variable is developed whose ANOVA table is illudtrated in Table 9. As illustrated in this table R^2 is 97.8%, and all the six explanatory variables of carat, cut, color, clarity, y and z, have sufficient statistical significance.
+
+```{r FINALMODEL, echo=FALSE, results="asis"}
+#Table 9
+Model2 <- lm(log(price) ~ carat + cut+ color + clarity + y + z , data=Train)
+stargazer (Model2, type="latex", title="ANOVA test of modified Model after log transformation.", header = FALSE)
+#summary (FinalModel)
+```
+\newpage
+
+## Diagnostics Plot of Modified Model after Log Transformation
+
+Figure 6 shows the diagnostic plots for the modified logarithmic price model. The plots show a more random behaviour for residuals than the previous non-logarithmic price model and the hetereoscedastic behaviour is gone. By the logarithmic transformation the scale location plot has improved with a more uniform mean, closer to one. The Q-Q plot also shows notable improvements in normality, although there are still some data points deviating from the ideal normal line. However, the standardized residual vs. leverage plot shows the influence of some outliers and high influencing points in our data set affecting the average line of this plot. 
+
+```{r Diagnosticstransformation, echo= FALSE, fig.pos="H", fig.width=6, fig.height=6, fig.cap="Diagnostic checks for Modified Model after Log Transformation.", warning=FALSE}
+#Figure 5
+layout(matrix (1:4, ncol=2))
+plot(Model2, span=1)
+layout(1)
+```
+
+\newpage
+
+##Variance Inflation Factor (VIF)
+
+At the beginning of this report we noticed the high correlaion between the explanatory variables, which makes it more essential to check for probable issues regarding multicollinearity. Multicollinearity is an important issue which may lead to huge errors in fitted models. The multicolliniearity of our logarithmic model is checked via the vif() command and the obtained results are illustrated in Figure 7. It is evident based on Figure 7 that the VIF of carat, y and z are huge, much larger than the critical value of 10. This means that the model has major problems due the correlations between the chosen explanatory variables.
+
+To solve this problem, one of the highly correlated variables is removed and the VIF is rechecked for the revised fitted model. Another way to handle the problematic correlations would have been to investigate the partial correlation between the variables and decide for variable ommissions based on the calculated values.
+
+
+```{r VIF1, echo=FALSE, fig.pos="h", fig.cap = "Variance Inflation Factor (VIF) of the Modified Model after Log Transformation."}
+#Figure 7
+ans<- vif (Model2)
+barplot (ans, col="blue", ylab="VIF", ylim=c(0, 70))
+abline( h=10, col="red", lwd=2)
+```
+
+\newpage
+## Removing the multicollinearity (1)
+
+To solve the issue of multicollinearity the explanatory variable z, has been removed from the model. The ANOVA table regarding the new fitted model with carat, cut, color, clarity and y as the explanatory variables is provided in table 10. The value of R^2 is 97.2% in this model and the variables are statistically significant except for the intercept. It is also surprising that the carat has a negative coefficient in this model.
+
+```{r remove1, echo=FALSE, results="asis"}
+#Table 10
+#powered1 <- powerTransform(price, lambda=2.5, gamma=NULL)
+Model3 <- lm(log(price) ~  carat + cut + color + clarity + y , data=Train)
+stargazer (Model3, type="latex", title="ANOVA test for the model after first step multicollinearity removal", header = FALSE)
+#summary (Model1)
+```
+\newpage
+
+## Rechacking the VIF (1)
+
+Before moving forward, the VIF of the revised fitted logarithmic model with explanatory variables of carat, cut, color, clarity and y has to be checked again. Figure 8, shows the VIF for this model, demonstarting that explanatory variables of carat and y are still highly correlated. Similar to previous step one of the two variables should be removed to solve the persisting multicollinearity issue. 
+
+```{r VIF2, echo=FALSE, fig.pos="h", fig.cap = "Variance Inflation Factor (VIF) after first step muliticollinearity removal."}
+#Figure 8
+ans<- vif (Model3)
+barplot (ans, col="blue", ylab="VIF", ylim=c(0, 40))
+abline( h=10, col="red", lwd=2)
+```
+
+\newpage
+
+## Removing the multicollinearity (2)
+
+Carat is removed and the revised logarithmic price model is developed with explanatory variables of cut, color, clarity and y. The new model's ANOVA table is shown in table 11. It is representing the R^2 value of 96.8%. However the "cut" variable has P-value of larger than 0.05, showing that it is not statistically significant in this model.
+
+```{r remove2, echo=FALSE, results="asis"}
+#Table 11
+#powered1 <- powerTransform(price, lambda=2.5, gamma=NULL)
+Model4 <- lm(log(price) ~ cut+ color + clarity + y, data=Train)
+stargazer (Model4, type="latex", title="ANOVA test of the modified model after log transformation and second step multicollinearity removal.", header = FALSE)
+#summary (Model3)
+```
+
+\newpage
+
+## Final Model after Log Transformation, multicollinearity correction and insignificant explanatory variables removal  
+
+The logarithmic final model is developed with color, clarity and y as its major explanatory variables. Table 12. presents the ANOVA table for this model. In the final model, all the explanatory variables are statistically significant and have positive coefficients as expected. Also, the model explains the 96.8 % of the total variabilities.
+
+```{r remove3, echo=FALSE, results="asis"}
+#Table 12
+Model5 <- lm(log(price) ~  color + clarity + y, data=Train)
+stargazer (Model5, type="latex", title="ANOVA test of the Final Model.", header = FALSE)
+#summary (Model3)
+```
+
+\newpage
+
+## Rechacking the VIF (2)
+
+The final logarithmic fitted model with explanatory variables of color, clarity and y, has VIF of less than 2, as shown in Figure 9. This means that the multicollinearity has been removed from our model after corrections.
+
+```{r VIF3, echo=FALSE, fig.cap = "Variance Inflation Factor (VIF) of the Final Model."}
+#Figure 9
+ans<- vif (Model5)
+barplot (ans, col="blue", ylab="VIF", ylim=c(0, 15))
+abline( h=10, col="red", lwd=2)
+```
+
+\newpage
+
+## Residual analysis of the Final Model
+
+The residual diagnostic plot of the final model is shown in Figure 10. Although they show that the model is struggling with some patterns due to the variabilities from the data set, the randomness of the residuals, the scale location plot, the residual alignment with the normal 45-degree line in the Q-Q plot and the Residual vs. Leverage plot are all acceptable, if the model be capable of predicting the test sample to the acceptable extent.
+
+```{r Diagnosticremoved, echo= FALSE, fig.pos= "H", fig.width=6, fig.height=6, fig.cap="Diagnostic checks for Final Model.", warning=FALSE}
+#Figure 10
+layout(matrix (1:4, ncol=2))
+plot(Model5, span=1)
+layout(1)
+```
+
+\newpage
+
+## Prediction
+
+Now that the Final model has passed the residual and multicollinearity investigations, we need to validate the model to see how accurately it can predict the diamond prices in future. In other words, the fitted model which was generated based on the Train sample set, should work for the test sample set. Figure 11. presentes the relationship between the actual value of the diamond price from the Test sample set and their fitted values based on the developed logarithmic model in this report. It seems that there are acceptable agreements between the actual values and the fitted ones, so the final model can work well in estimation of the future diamond prices.
+
+As another tool for checking the the model regarding its prediction capabilities, the root mean square error (RMSE) analysis is also conducted. Table 13 presents the obtained RMSE values for the fitted model based on the Train and Test data sets, which are both equal to 0.03 confirming that the final fitted model has a good prediction ability.
+
+
+```{r PREDICTION, echo=FALSE, fig.width=6, fig.height=4, fig.cap="Prediction plot: Comparing the Actual Value and the Fitted Value of the Test Data"}
+#Figure 11
+Test_Price <- predict(Model5, newdata=Test)
+plot(Test_Price,log(Test[,10]),ylab="log(actual-Price)", xlab="log(predicted-Price)")
+abline(0,1,col="red")
+```
+
+```{r RMSE, echo=FALSE, results="asis"}
+RMSETEST <- mean((Test_Price-log(Test[,10]))^2)
+RMSETRAIN <- mean((Model5$fitted.values-log(Train[,10]))^2)
+RMSE1 <- data.frame("RMSE"=c(round(RMSETRAIN, digits=5), round(RMSETEST, digits=5)), row.names=c("Train Data", "Test Data"))
+RMSE2 <- xtable(RMSE1, caption="RMSE Comparisons")
+print(RMSE2)
+# table 9
+```
+\newpage
+
+
+## Conclusions
+
+
+The influence of 9 various explanatory variables on diamond price was investigated in this study. The variable selection analyses (backward stagewise and best subset), omitted 2 explanatory variables and the remaining 7 variables of carat, cut, color, clarity, depth, y, z were picked as the most statistically significant predictors. The diagnostic checks and histogram dot plot of the data set showed that the original model has issues with normality and covering the wide range of data from the dataset. Logarithmic power transformation was then applied based on the optimum transformation coefficient of zero calculated from the BoxCox command. The developed logarithmic transformation was then improved by removal of less significant variable of depth. The developed model at this stage improved the residual behaviour and also the explanation of variabilities, however the high correlation between the model's explanatory variables led to problematic VIF values. To solve the issue the highly correlated explanatory variables of z and carat were omitted step by step to save the model from multicullinearity. After the final ommission of cut as the last non-significant variable from the new model, the finalized fitted linear regression model was developed as follows:
+
+log(Diamond Price) = 1.1245 + 0.089 color + 0.106 clarity + 0.982 y 
+
+The final model explains 96.8% of the total variabilities, and has shown good ability in predicting the diamond price in future.
